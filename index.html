@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Weight Tracker</title>
+<style>
+:root{--bg:#fbf7f8;--card:#fff;--text:#2a2230;--muted:#8d8496;--line:#eee6ea;--accent:#e0457b;--accent2:#ff9a8b;--good:#2f9e6f;color-scheme:light;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#17131a;--card:#221c27;--text:#f4eef6;--muted:#9a8fa5;--line:#332b3a;--accent:#ff6fa1;--accent2:#ffb199;--good:#5fd4a0;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#17131a;--card:#221c27;--text:#f4eef6;--muted:#9a8fa5;--line:#332b3a;--accent:#ff6fa1;--accent2:#ffb199;--good:#5fd4a0;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;min-height:100vh}
+main{max-width:640px;margin:0 auto;padding:24px 18px 48px}
+h1{font-size:26px;margin:4px 0 2px;letter-spacing:-.02em}
+.sub{color:var(--muted);margin:0 0 20px;font-size:14px}
+.card{background:var(--card);border-radius:22px;padding:18px;box-shadow:0 8px 30px rgba(120,60,100,.08);margin-bottom:16px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.stat{text-align:center}
+.stat b{display:block;font-size:24px;letter-spacing:-.02em}
+.stat span{font-size:12px;color:var(--muted)}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+input{font:inherit;color:var(--text);background:var(--bg);border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;min-width:0;flex:1}
+input:focus{outline:none;border-color:var(--accent)}
+button{font:inherit;font-weight:600;border:0;border-radius:14px;padding:12px 20px;color:#fff;background:linear-gradient(135deg,var(--accent),var(--accent2));cursor:pointer}
+button:active{transform:scale(.97)}
+.ghost{background:none;color:var(--muted);padding:6px 10px;font-weight:500}
+.goal{display:flex;align-items:center;gap:10px;margin-top:12px;font-size:14px;color:var(--muted)}
+.goal input{max-width:110px;flex:none;padding:8px 12px}
+#chartwrap{position:relative;width:100%;height:260px}
+svg{display:block;width:100%;height:100%;overflow:visible}
+#tip{position:absolute;pointer-events:none;background:var(--text);color:var(--bg);font-size:12px;padding:6px 10px;border-radius:10px;transform:translate(-50%,-130%);white-space:nowrap;opacity:0;transition:opacity .12s}
+.empty{color:var(--muted);text-align:center;padding:90px 10px;font-size:14px}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;align-items:center;justify-content:space-between;padding:10px 2px;border-bottom:1px solid var(--line);font-size:15px}
+li:last-child{border:0}
+li small{color:var(--muted)}
+.delta{font-size:12px;margin-left:8px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Weight Tracker</h1>
+  <p class="sub">One number a day. Watch the trend, not the noise.</p>
+
+  <div class="card stats">
+    <div class="stat"><b id="sCur">–</b><span>Current (kg)</span></div>
+    <div class="stat"><b id="sChg">–</b><span>Total change</span></div>
+    <div class="stat"><b id="sAvg">–</b><span>7-entry average</span></div>
+  </div>
+
+  <div class="card">
+    <div id="chartwrap"></div>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <input id="date" type="date" aria-label="Date">
+      <input id="w" type="number" inputmode="decimal" step="0.1" min="20" max="400" placeholder="Weight (kg)" aria-label="Weight in kg">
+      <button id="add">Add</button>
+    </div>
+    <div class="goal">Goal weight <input id="goal" type="number" inputmode="decimal" step="0.1" placeholder="kg"></div>
+  </div>
+
+  <div class="card"><ul id="list"></ul></div>
+</main>
+
+<script>
+(function(){
+  var KEY="weight-tracker-v1";
+  var state={entries:[],goal:null};
+  try{var raw=localStorage.getItem(KEY);if(raw){var p=JSON.parse(raw);if(p&&Array.isArray(p.entries))state=p;}}catch(e){}
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+  var $=function(id){return document.getElementById(id);};
+  var today=new Date();today.setMinutes(today.getMinutes()-today.getTimezoneOffset());
+  $("date").value=today.toISOString().slice(0,10);
+  if(state.goal)$("goal").value=state.goal;
+
+  function fmtDate(s){var d=new Date(s+"T00:00:00");return d.toLocaleDateString(undefined,{month:"short",day:"numeric"});}
+  function sorted(){return state.entries.slice().sort(function(a,b){return a.d<b.d?-1:1;});}
+
+  $("add").onclick=function(){
+    var d=$("date").value,w=parseFloat($("w").value);
+    if(!d||isNaN(w)||w<20||w>400){$("w").focus();return;}
+    state.entries=state.entries.filter(function(e){return e.d!==d;});
+    state.entries.push({d:d,w:Math.round(w*10)/10});
+    $("w").value="";save();render();
+  };
+  $("w").addEventListener("keydown",function(e){if(e.key==="Enter")$("add").click();});
+  $("goal").onchange=function(){var g=parseFloat(this.value);state.goal=isNaN(g)?null:g;save();render();};
+
+  function smooth(pts){
+    if(pts.length<2)return "";
+    var d="M"+pts[0][0]+","+pts[0][1];
+    for(var i=0;i<pts.length-1;i++){
+      var p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;
+      var c1x=p1[0]+(p2[0]-p0[0])/6,c1y=p1[1]+(p2[1]-p0[1])/6;
+      var c2x=p2[0]-(p3[0]-p1[0])/6,c2y=p2[1]-(p3[1]-p1[1])/6;
+      d+=" C"+c1x+","+c1y+" "+c2x+","+c2y+" "+p2[0]+","+p2[1];
+    }
+    return d;
+  }
+
+  function chart(){
+    var wrap=$("chartwrap"),data=sorted();
+    if(data.length<2){wrap.innerHTML='<div class="empty">Add at least two weigh-ins to see your graph ✨</div>';return;}
+    var W=wrap.clientWidth,H=wrap.clientHeight,pl=38,pr=14,pt=14,pb=28;
+    var ws=data.map(function(e){return e.w;});
+    if(state.goal)ws.push(state.goal);
+    var min=Math.min.apply(null,ws),max=Math.max.apply(null,ws);
+    var pad=Math.max((max-min)*0.2,0.5);min-=pad;max+=pad;
+    var t0=new Date(data[0].d).getTime(),t1=new Date(data[data.length-1].d).getTime();
+    var span=t1-t0||1;
+    var X=function(d){return pl+(new Date(d).getTime()-t0)/span*(W-pl-pr);};
+    var Y=function(w){return pt+(1-(w-min)/(max-min))*(H-pt-pb);};
+    var pts=data.map(function(e){return [X(e.d),Y(e.w)];});
+    var line=smooth(pts);
+    var area=line+" L"+pts[pts.length-1][0]+","+(H-pb)+" L"+pts[0][0]+","+(H-pb)+" Z";
+    var s='<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'">';
+    s+='<defs><linearGradient id="ln" x1="0" x2="1"><stop offset="0" stop-color="var(--accent2)"/><stop offset="1" stop-color="var(--accent)"/></linearGradient>';
+    s+='<linearGradient id="fl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".28"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>';
+    for(var i=0;i<4;i++){
+      var v=min+(max-min)*i/3,y=Y(v);
+      s+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+y+'" y2="'+y+'" stroke="var(--line)" stroke-dasharray="3 5"/>';
+      s+='<text x="'+(pl-8)+'" y="'+(y+4)+'" text-anchor="end" font-size="11" fill="var(--muted)">'+v.toFixed(1)+'</text>';
+    }
+    if(state.goal){
+      var gy=Y(state.goal);
+      s+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+gy+'" y2="'+gy+'" stroke="var(--good)" stroke-width="1.5" stroke-dasharray="6 5"/>';
+      s+='<text x="'+(W-pr)+'" y="'+(gy-6)+'" text-anchor="end" font-size="11" fill="var(--good)">Goal '+state.goal+'</text>';
+    }
+    s+='<path d="'+area+'" fill="url(#fl)"/>';
+    s+='<path d="'+line+'" fill="none" stroke="url(#ln)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>';
+    s+='<text x="'+pts[0][0]+'" y="'+(H-8)+'" font-size="11" fill="var(--muted)" text-anchor="start">'+fmtDate(data[0].d)+'</text>';
+    s+='<text x="'+pts[pts.length-1][0]+'" y="'+(H-8)+'" font-size="11" fill="var(--muted)" text-anchor="end">'+fmtDate(data[data.length-1].d)+'</text>';
+    var show=data.length<=40;
+    if(show)pts.forEach(function(p){s+='<circle cx="'+p[0]+'" cy="'+p[1]+'" r="3.5" fill="var(--card)" stroke="var(--accent)" stroke-width="2"/>';});
+    s+='<circle id="hot" r="6" fill="var(--accent)" stroke="var(--card)" stroke-width="3" style="display:none"/>';
+    s+='</svg><div id="tip"></div>';
+    wrap.innerHTML=s;
+    var hot=$("hot"),tip=$("tip");
+    function move(ev){
+      var r=wrap.getBoundingClientRect(),x=ev.clientX-r.left,bi=0,bd=1e9;
+      pts.forEach(function(p,i){var dd=Math.abs(p[0]-x);if(dd<bd){bd=dd;bi=i;}});
+      hot.setAttribute("cx",pts[bi][0]);hot.setAttribute("cy",pts[bi][1]);hot.style.display="";
+      tip.textContent=fmtDate(data[bi].d)+" · "+data[bi].w+" kg";
+      tip.style.left=pts[bi][0]+"px";tip.style.top=pts[bi][1]+"px";tip.style.opacity=1;
+    }
+    wrap.onpointermove=move;wrap.onpointerdown=move;
+    wrap.onpointerleave=function(){hot.style.display="none";tip.style.opacity=0;};
+  }
+
+  function render(){
+    var data=sorted();
+    if(data.length){
+      var cur=data[data.length-1].w,chg=cur-data[0].w;
+      var last=data.slice(-7),avg=last.reduce(function(a,e){return a+e.w;},0)/last.length;
+      $("sCur").textContent=cur.toFixed(1);
+      $("sChg").textContent=(chg>0?"+":"")+chg.toFixed(1);
+      $("sChg").style.color=chg<0?"var(--good)":"inherit";
+      $("sAvg").textContent=avg.toFixed(1);
+    }else{$("sCur").textContent=$("sChg").textContent=$("sAvg").textContent="–";}
+    var ul=$("list");ul.innerHTML="";
+    if(!data.length){ul.innerHTML='<li><small>No entries yet. Add your first weigh-in above.</small></li>';}
+    data.slice().reverse().forEach(function(e){
+      var idx=data.indexOf(e),prev=data[idx-1],li=document.createElement("li");
+      var dl="";
+      if(prev){var df=e.w-prev.w;dl='<span class="delta" style="color:'+(df<=0?"var(--good)":"var(--muted)")+'">'+(df>0?"+":"")+df.toFixed(1)+'</span>';}
+      li.innerHTML='<span><b>'+e.w.toFixed(1)+' kg</b>'+dl+'<br><small>'+fmtDate(e.d)+'</small></span>';
+      var b=document.createElement("button");b.className="ghost";b.textContent="Delete";
+      b.onclick=function(){state.entries=state.entries.filter(function(x){return x.d!==e.d;});save();render();};
+      li.appendChild(b);ul.appendChild(li);
+    });
+    chart();
+  }
+  window.addEventListener("resize",chart);
+  render();
+})();
+</script>
+</body>
+</html>

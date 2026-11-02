@@ -16,6 +16,11 @@ main{max-width:640px;margin:0 auto;padding:24px 18px 48px}
 h1{font-size:26px;margin:4px 0 2px;letter-spacing:-.02em}
 .sub{color:var(--muted);margin:0 0 20px;font-size:14px}
 .card{background:var(--card);border-radius:22px;padding:18px;box-shadow:0 8px 30px rgba(120,60,100,.08);margin-bottom:16px}
+.switch{position:relative;display:grid;grid-template-columns:1fr 1fr;background:var(--card);border-radius:999px;padding:5px;margin-bottom:22px;box-shadow:0 8px 30px rgba(120,60,100,.08)}
+.switch .pill{position:absolute;top:5px;bottom:5px;left:5px;width:calc(50% - 5px);border-radius:999px;background:linear-gradient(135deg,var(--accent),var(--accent2));transition:transform .3s cubic-bezier(.4,.2,.2,1)}
+.switch[data-active="1"] .pill{transform:translateX(100%)}
+.switch button{position:relative;z-index:1;background:none;color:var(--muted);padding:10px;border-radius:999px;transition:color .25s}
+.switch button.on{color:#fff}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .stat{text-align:center}
 .stat b{display:block;font-size:24px;letter-spacing:-.02em}
@@ -41,8 +46,13 @@ li small{color:var(--muted)}
 </head>
 <body>
 <main>
+  <div class="switch" id="switch" data-active="0" role="tablist">
+    <div class="pill"></div>
+    <button id="tab-ika" role="tab">Ika</button>
+    <button id="tab-luiza" role="tab">Luiza</button>
+  </div>
   <h1>Weight Tracker</h1>
-  <p class="sub">One number a day. Watch the trend, not the noise.</p>
+  <p class="sub" id="sub"></p>
 
   <div class="card stats">
     <div class="stat"><b id="sCur">–</b><span>Current (kg)</span></div>
@@ -68,10 +78,21 @@ li small{color:var(--muted)}
 
 <script>
 (function(){
-  var KEY="weight-tracker-v1";
-  var state={entries:[],goal:null};
-  try{var raw=localStorage.getItem(KEY);if(raw){var p=JSON.parse(raw);if(p&&Array.isArray(p.entries))state=p;}}catch(e){}
-  function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
+  var KEY="weight-tracker-v2",OLD="weight-tracker-v1";
+  var NAMES={ika:"Ika",luiza:"Luiza"};
+  var db={active:"ika",people:{ika:{entries:[],goal:null},luiza:{entries:[],goal:null}}};
+  try{
+    var raw=localStorage.getItem(KEY);
+    if(raw){
+      var p=JSON.parse(raw);
+      if(p&&p.people){["ika","luiza"].forEach(function(k){if(p.people[k]&&Array.isArray(p.people[k].entries))db.people[k]=p.people[k];});if(NAMES[p.active])db.active=p.active;}
+    }else{
+      var o=localStorage.getItem(OLD);
+      if(o){var q=JSON.parse(o);if(q&&Array.isArray(q.entries)){db.people.luiza=q;db.active="luiza";}}
+    }
+  }catch(e){}
+  var state=db.people[db.active];
+  function save(){try{localStorage.setItem(KEY,JSON.stringify(db));}catch(e){}}
   var $=function(id){return document.getElementById(id);};
   var today=new Date();today.setMinutes(today.getMinutes()-today.getTimezoneOffset());
   $("date").value=today.toISOString().slice(0,10);
@@ -174,6 +195,17 @@ li small{color:var(--muted)}
     });
     chart();
   }
+
+  function paint(){
+    $("switch").setAttribute("data-active",db.active==="luiza"?"1":"0");
+    ["ika","luiza"].forEach(function(k){$("tab-"+k).className=db.active===k?"on":"";});
+    $("sub").textContent=NAMES[db.active]+"’s weight. One number a day, watch the trend, not the noise.";
+    $("goal").value=state.goal||"";
+  }
+  ["ika","luiza"].forEach(function(k){
+    $("tab-"+k).onclick=function(){db.active=k;state=db.people[k];save();paint();render();};
+  });
+  paint();
   window.addEventListener("resize",chart);
   render();
 })();
